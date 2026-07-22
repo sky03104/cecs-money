@@ -492,33 +492,14 @@ tr:last-child td{border-bottom:none}
         <!-- 左欄 -->
         <div>
           <div class="settings-section">
-            <div class="section-title"><i class="ti ti-user-dollar"></i>正職薪資結構</div>
+            <div class="section-title"><i class="ti ti-building"></i>案場薪資結構（依案場自動套用）</div>
+            <div id="site-profile-cards"></div>
+          </div>
+
+          <div class="settings-section">
+            <div class="section-title"><i class="ti ti-user-dollar"></i>全域獎金設定</div>
             <div class="card">
               <div class="grid-2">
-                <div class="form-group">
-                  <label class="form-label">本薪（月薪，元）</label>
-                  <input type="number" class="form-input" id="s-base" value="26500" oninput="saveSettings()">
-                </div>
-                <div class="form-group">
-                  <label class="form-label">月標準工時（小時）</label>
-                  <input type="number" class="form-input" id="s-stdhours" value="240" oninput="saveSettings()">
-                </div>
-                <div class="form-group">
-                  <label class="form-label">伙食津貼（元/月）</label>
-                  <input type="number" class="form-input" id="s-meal" value="3000" oninput="saveSettings()">
-                </div>
-                <div class="form-group">
-                  <label class="form-label">固定加班費（元/月）</label>
-                  <input type="number" class="form-input" id="s-fixedot" value="3993" oninput="saveSettings()">
-                </div>
-                <div class="form-group">
-                  <label class="form-label">加班費倍率（第1-2小時）</label>
-                  <input type="number" step="0.01" class="form-input" id="s-ot1" value="1.34" oninput="saveSettings()">
-                </div>
-                <div class="form-group">
-                  <label class="form-label">加班費倍率（第3小時起）</label>
-                  <input type="number" step="0.01" class="form-input" id="s-ot2" value="1.67" oninput="saveSettings()">
-                </div>
                 <div class="form-group">
                   <label class="form-label">特休獎金（元/天）</label>
                   <input type="number" class="form-input" id="s-annualbonus" value="1230" oninput="saveSettings()">
@@ -718,19 +699,74 @@ let payslipIndex = 0;       // 目前顯示第幾筆
 let customBonus1 = {name:'自訂獎金1', amount:0};
 let customBonus2 = {name:'自訂獎金2', amount:0};
 
-/* ===== 預設薪資設定 ===== */
+/* ===== 預設薪資設定（全域項）===== */
 let settings = {
-  baseSalary:26500, stdHours:240, mealAllowance:3000,
-  fixedOT:3993, otRate1:1.34, otRate2:1.67,
   annualLeaveBonusPerDay:1230, fullAttendanceBonus:0,
   laborIns:1145, healthIns:748, welfareFund:246,
   laborPension:2892, laborInsBase:45800, healthInsBase:48200,
   ptHourly:183, ptAnnualBonusPerDay:1230,
   mgmtAllowances:{
     '隊長':8000,'副隊長':5000,'組長':3000,'副組長':2000,
-    '案場經理':8000,'安管員':0,'保全員':0,'臨聘人員':0
+    '案場經理':10130,'安管員':0,'保全員':0,'臨聘人員':0
   }
 };
+
+/* ===== 案場薪資結構（依 dept 關鍵字比對套用）=====
+   時薪基準 = (本薪+伙食)/240 = 122.916（29500/30天/8h）
+   延長時薪 = 時薪 × 4/3 ≈ 163.888
+   每日到離勤12H = 10H正常 + 1H延長(含在固定加班費) + 1H休息 */
+let siteProfiles = {
+  wuying: {
+    label:'衛武營', match:['衛武營'],
+    baseSalary:26500, mealAllowance:3000,
+    extraNormalPay:3196,   // 增加正常工時工資 26h(200-174)
+    holidayFixedPay:1394,  // 國定假日加班費/月
+    fixedOT:3932,          // 含延長20H加班費3,278＋教育訓練費
+    scheduledDays:20,      // 月排定工作天數
+    attendLadder:[1400,1800,1800,1800], // 第21~24天出勤加班費暨規律獎金（累加，超過取末級）
+  },
+  taihe: {
+    label:'台橡', match:['台橡'],
+    baseSalary:26500, mealAllowance:3000,
+    extraNormalPay:8113,   // 66h(240-174)
+    holidayFixedPay:1394,
+    fixedOT:3993,          // 含延長24H加班費3,934
+    scheduledDays:24,
+    attendLadder:[],       // 超出天數改班表為「休」另表折現，此處不計酬僅警告
+  },
+  hanshin: {
+    label:'漢神本館.巨蛋', match:['漢神','巨蛋','本館','崇神'],
+    baseSalary:26500, mealAllowance:3000,
+    extraNormalPay:8113, holidayFixedPay:1394, fixedOT:3993,
+    scheduledDays:24, attendLadder:[],
+  },
+  default: {
+    label:'預設(其他案場)', match:[],
+    baseSalary:26500, mealAllowance:3000,
+    extraNormalPay:3196, holidayFixedPay:1394, fixedOT:3932,
+    scheduledDays:20, attendLadder:[],
+  },
+};
+
+function getSiteProfile(dept) {
+  const d = String(dept || '');
+  for (const key of ['wuying','taihe','hanshin']) {
+    if (siteProfiles[key].match.some(kw => d.includes(kw))) return siteProfiles[key];
+  }
+  return siteProfiles.default;
+}
+
+/* 時薪基準（勞動部：月薪/30天/8h）*/
+function profileHourlyRate(p) { return (p.baseSalary + p.mealAllowance) / 240; }
+
+/* 出勤階梯獎金：超出排定天數的第 i 天領 attendLadder[i-1]，超過階梯長度取最後一級 */
+function calcLadderPay(profile, overDays) {
+  const ladder = profile.attendLadder || [];
+  if (!ladder.length || overDays <= 0) return 0;
+  let sum = 0;
+  for (let i = 0; i < overDays; i++) sum += ladder[Math.min(i, ladder.length-1)];
+  return sum;
+}
 
 /* ===== 獎金預設項目 ===== */
 const BONUS_TYPES = [
@@ -1566,7 +1602,58 @@ function renderAnnualLeaveTable() {
 /* ================================================================
    Tab 3：薪資設定
 ================================================================ */
+function renderSiteProfileCards() {
+  const container = document.getElementById('site-profile-cards');
+  if (!container) return;
+  const numInput = (key, field, val, label) => `
+    <div class="form-group">
+      <label class="form-label">${label}</label>
+      <input type="number" class="form-input" value="${val}"
+        oninput="updateSiteProfile('${key}','${field}',this.value)">
+    </div>`;
+  container.innerHTML = Object.entries(siteProfiles).map(([key, p]) => {
+    const hourly = profileHourlyRate(p);
+    const ladderInputs = [0,1,2,3].map(i => `
+      <div class="form-group">
+        <label class="form-label">第${p.scheduledDays+i+1}天出勤（元）</label>
+        <input type="number" class="form-input" value="${p.attendLadder[i]||0}"
+          oninput="updateSiteLadder('${key}',${i},this.value)">
+      </div>`).join('');
+    return `<div class="card" style="margin-bottom:12px">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px">
+        <b style="color:var(--gold2)">${p.label}</b>
+        <span style="font-size:.7rem;color:var(--text3)">時薪基準 ${hourly.toFixed(3)} 元/h（延長 ${(hourly*4/3).toFixed(3)}）</span>
+      </div>
+      <div class="grid-2">
+        ${numInput(key,'baseSalary',p.baseSalary,'本薪（元/月）')}
+        ${numInput(key,'mealAllowance',p.mealAllowance,'伙食津貼（元/月）')}
+        ${numInput(key,'extraNormalPay',p.extraNormalPay,'增加正常工時工資（元/月）')}
+        ${numInput(key,'holidayFixedPay',p.holidayFixedPay,'國定假日加班費（元/月）')}
+        ${numInput(key,'fixedOT',p.fixedOT,'固定加班費（元/月）')}
+        ${numInput(key,'scheduledDays',p.scheduledDays,'月排定工作天數（天）')}
+        ${ladderInputs}
+      </div>
+      <div style="font-size:.68rem;color:var(--text3);margin-top:6px">
+        出勤階梯獎金為累加制；四格皆為0表示超出天數不計酬（報表顯示警告）。
+      </div>
+    </div>`;
+  }).join('');
+}
+
+function updateSiteProfile(key, field, val) {
+  siteProfiles[key][field] = parseFloat(val) || 0;
+}
+
+function updateSiteLadder(key, idx, val) {
+  const ladder = siteProfiles[key].attendLadder;
+  while (ladder.length <= idx) ladder.push(0);
+  ladder[idx] = parseFloat(val) || 0;
+  // 去除尾端0，全0視為無階梯
+  while (ladder.length && ladder[ladder.length-1] === 0) ladder.pop();
+}
+
 function initSettingsTab() {
+  renderSiteProfileCards();
   // 幹部津貼表
   const roles = ['隊長','副隊長','組長','副組長','案場經理','安管員','保全員'];
   document.getElementById('role-allowance-table').innerHTML = roles.map(role => `
@@ -1579,12 +1666,6 @@ function initSettingsTab() {
 }
 
 function saveSettings() {
-  settings.baseSalary = parseFloat(document.getElementById('s-base').value)||26500;
-  settings.stdHours = parseFloat(document.getElementById('s-stdhours').value)||240;
-  settings.mealAllowance = parseFloat(document.getElementById('s-meal').value)||3000;
-  settings.fixedOT = parseFloat(document.getElementById('s-fixedot').value)||3993;
-  settings.otRate1 = parseFloat(document.getElementById('s-ot1').value)||1.34;
-  settings.otRate2 = parseFloat(document.getElementById('s-ot2').value)||1.67;
   settings.annualLeaveBonusPerDay = parseFloat(document.getElementById('s-annualbonus').value)||1230;
   settings.fullAttendanceBonus = parseFloat(document.getElementById('s-fullatt').value)||0;
   settings.laborIns = parseFloat(document.getElementById('s-labor').value)||1145;
@@ -1603,7 +1684,6 @@ function saveSettings() {
 function initBonusGlobalGrid() {
   const bonusAmounts = {
     fullAttendance: settings.fullAttendanceBonus,
-    fixedOT: settings.fixedOT,
     festival: 0,
     performance: 0,
     annualLeaveBonusPerDay: settings.annualLeaveBonusPerDay,
@@ -1611,7 +1691,6 @@ function initBonusGlobalGrid() {
 
   document.getElementById('bonus-global-grid').innerHTML = [
     {id:'fullAttendance', name:'全勤獎金 (元/月)', type:'number'},
-    {id:'fixedOT', name:'固定加班費 (元/月)', type:'number'},
     {id:'festival', name:'三節禮金 (元)', type:'number'},
     {id:'performance', name:'績效獎金 (元)', type:'number'},
     {id:'annualLeaveBonusPerDay', name:'特休獎金 (元/天)', type:'number'},
@@ -1662,7 +1741,6 @@ function initBonusGlobalGrid() {
 function updateGlobalBonus(id, val) {
   const v = parseInt(val) || 0;
   if (id === 'annualLeaveBonusPerDay') settings.annualLeaveBonusPerDay = v;
-  if (id === 'fixedOT') settings.fixedOT = v;
   if (id === 'fullAttendance') settings.fullAttendanceBonus = v;
 }
 
@@ -1757,12 +1835,13 @@ function calculateSalary(emp) {
   const cfg = empBonusConfig[emp.id] || defaultBonusConfig(emp.id);
   saveSettings(); // 確保設定最新
 
-  // 計算各類時數
-  let normalHours = 0, otDayOffHours = 0;
+  // 計算各類時數與出勤天數（停休班別計入出勤天數）
+  let normalHours = 0, otDayOffHours = 0, attendDays = 0;
   emp.shifts.forEach(s => {
     if (!s || NON_WORK_SHIFTS.has(s)) return;
     const h = getShiftHours(s, emp.normalHours, emp.siteShiftHours);
     if (h <= 0) return;
+    attendDays++;
     if (OT_DAY_OFF_SHIFTS.has(s)) otDayOffHours += h;
     else normalHours += h;
   });
@@ -1789,9 +1868,10 @@ function calculateSalary(emp) {
     const customBonus = custom1Pay + custom2Pay;
     const gross = base + annualBonus + customBonus;
     return {
-      ...emp, normalHours, otDayOffHours, unpaidHours:0,
+      ...emp, normalHours, otDayOffHours, attendDays, unpaidHours:0,
       basePay:base, unpaidDeduction:0,
-      mgmtAllowance:0, normalOTPay:0, holidayOTPay:0, fixedOTPay:0,
+      mgmtAllowance:0, extraNormalPay:0, holidayFixedPay:0,
+      ladderPay:0, overDays:0, overScheduleWarning:false, fixedOTPay:0,
       mealAllowance:0, annualLeaveBonus:annualBonus,
       fullAttBonus:0, festival:0, performance:0,
       customBonus, custom1Pay, custom2Pay,
@@ -1802,30 +1882,31 @@ function calculateSalary(emp) {
     };
   }
 
-  // 正職計算
-  const hourlyRate = settings.baseSalary / settings.stdHours;
+  // 正職計算：依案場薪資結構
+  const profile = getSiteProfile(emp.dept);
+  const hourlyRate = profileHourlyRate(profile); // (本薪+伙食)/240 = 122.916
   const unpaidDeduction = Math.round(unpaidHours * hourlyRate);
-  const adjustedBasePay = settings.baseSalary - unpaidDeduction;
+  const adjustedBasePay = profile.baseSalary - unpaidDeduction;
 
-  // 加班計算
-  const netWorkHours = normalHours - unpaidHours;
-  const otHours = Math.max(0, netWorkHours - settings.stdHours);
-  const ot1 = Math.min(otHours, 44); // 2h/day × 22工作日
-  const ot2 = Math.max(0, otHours - 44);
-  const normalOTPay = Math.round(ot1 * hourlyRate * settings.otRate1 + ot2 * hourlyRate * settings.otRate2);
+  // 每日1H延長工時已含在固定加班費內，排滿班不產生變動加班費。
+  // 超出排定天數的出勤 → 出勤階梯獎金（累加制）；無階梯的案場不計酬僅警告。
+  const overDays = Math.max(0, attendDays - profile.scheduledDays);
+  const ladderPay = calcLadderPay(profile, overDays);
+  const overScheduleWarning = overDays > 0 && ladderPay === 0;
 
-  // 停休加班（休A/休B等）
-  const holidayOTPay = Math.round(otDayOffHours * hourlyRate * settings.otRate1);
+  // 增加正常工時工資、國定假日加班費（每月固定）
+  const extraNormalPay = profile.extraNormalPay;
+  const holidayFixedPay = profile.holidayFixedPay;
 
   // 幹部津貼
   const mgmtAllowance = cfg.mgmtAllowance !== false ?
     (settings.mgmtAllowances[emp.role] || 0) : 0;
 
-  // 固定加班費
-  const fixedOTPay = cfg.fixedOT !== false ? settings.fixedOT : 0;
+  // 固定加班費（依案場）
+  const fixedOTPay = cfg.fixedOT !== false ? profile.fixedOT : 0;
 
-  // 伙食津貼
-  const mealAllowance = settings.mealAllowance;
+  // 伙食津貼（依案場）
+  const mealAllowance = profile.mealAllowance;
 
   // 特休獎金
   const annualDays = cfg.annualLeaveDays || 0;
@@ -1849,9 +1930,9 @@ function calculateSalary(emp) {
   ].filter(Boolean).join('+') || '自訂獎金';
 
   // 應稅加項 A
-  const taxableA = adjustedBasePay + mgmtAllowance + normalOTPay;
+  const taxableA = adjustedBasePay + mgmtAllowance + extraNormalPay;
   // 免稅加項 B
-  const nonTaxableB = mealAllowance + fixedOTPay + annualLeaveBonus + fullAttBonus + holidayOTPay + festival + performance + customBonus;
+  const nonTaxableB = mealAllowance + fixedOTPay + holidayFixedPay + ladderPay + annualLeaveBonus + fullAttBonus + festival + performance + customBonus;
   // 應稅扣項 C = 0（所得稅另計）
   const deductionsC = 0;
   // 免稅扣項 D
@@ -1861,12 +1942,13 @@ function calculateSalary(emp) {
   const net = gross - deductionsC - deductionsD;
 
   return {
-    ...emp, normalHours, otDayOffHours, unpaidHours,
-    basePay:settings.baseSalary, unpaidDeduction,
-    adjustedBasePay, mgmtAllowance, normalOTPay, holidayOTPay,
+    ...emp, normalHours, otDayOffHours, attendDays, unpaidHours,
+    basePay:profile.baseSalary, unpaidDeduction,
+    adjustedBasePay, mgmtAllowance, extraNormalPay, holidayFixedPay,
+    ladderPay, overDays, overScheduleWarning,
     fixedOTPay, mealAllowance, annualLeaveBonus, fullAttBonus,
     festival, performance, customBonus, custom1Pay, custom2Pay,
-    otHours:Math.round((ot1+ot2)*10)/10,
+    scheduledDays:profile.scheduledDays,
     taxableA, nonTaxableB, deductionsC, deductionsD,
     gross, net, annualLeaveDays:annualDays,
     laborIns:settings.laborIns, healthIns:settings.healthIns,
@@ -1909,36 +1991,44 @@ function renderReportTable() {
   // 摘要指標
   const totalNet = filtered.reduce((s,e)=>s+e.net,0);
   const totalGross = filtered.reduce((s,e)=>s+e.gross,0);
-  const totalOT = filtered.reduce((s,e)=>s+(e.normalOTPay||0),0);
+  const totalLadder = filtered.reduce((s,e)=>s+(e.ladderPay||0),0);
   const totalUnpaid = filtered.filter(e=>e.unpaidDeduction>0).length;
+  const totalWarn = filtered.filter(e=>e.overScheduleWarning).length;
   document.getElementById('report-metrics').innerHTML = [
     {label:'合計實發薪資', val:fmt(totalNet), cls:'gold'},
     {label:'合計應發薪資', val:fmt(totalGross), cls:''},
-    {label:'加班費合計', val:fmt(totalOT), cls:''},
+    {label:'出勤階梯獎金合計', val:fmt(totalLadder), cls:''},
     {label:'無薪假人數', val:totalUnpaid+'人', cls:totalUnpaid>0?'red':''},
-    {label:'人數（篩選後）', val:filtered.length+'人', cls:''},
+    {label:'超排定天數警告', val:totalWarn+'人', cls:totalWarn>0?'red':''},
   ].map(c=>`<div class="metric-card"><div class="metric-label">${c.label}</div><div class="metric-val ${c.cls}">${c.val}</div></div>`).join('');
 
   document.getElementById('rep-thead').innerHTML =
     '<th>姓名</th><th>案場</th><th>職稱</th><th>類型</th>' +
-    '<th class="td-num">工時</th><th class="td-num">加班時</th><th class="td-num">無薪假(h)</th>' +
-    '<th class="td-num">底薪</th><th class="td-num">幹部津貼</th><th class="td-num">加班費</th>' +
-    '<th class="td-num">固定OT</th><th class="td-num">伙食</th><th class="td-num">特休獎金</th>' +
+    '<th class="td-num">工時</th><th class="td-num">出勤天數</th><th class="td-num">無薪假(h)</th>' +
+    '<th class="td-num">底薪</th><th class="td-num">幹部津貼</th><th class="td-num">增加正常工時</th>' +
+    '<th class="td-num">階梯獎金</th><th class="td-num">固定OT</th><th class="td-num">伙食</th>' +
+    '<th class="td-num">特休獎金</th>' +
     '<th class="td-num">應發(A+B)</th><th class="td-num">扣款(D)</th>' +
     '<th class="td-num" style="color:var(--green)">實發薪資</th><th>薪資單</th>';
 
   const slice = filtered.slice(repPage*PER_PAGE, (repPage+1)*PER_PAGE);
-  document.getElementById('rep-tbody').innerHTML = slice.map(e => `<tr>
+  document.getElementById('rep-tbody').innerHTML = slice.map(e => {
+    const totalH = (e.normalHours||0) + (e.otDayOffHours||0);
+    const dayCell = e.overScheduleWarning
+      ? `<span class="deduct-cell" title="超出排定${e.scheduledDays}天且無階梯設定，超出天數未計酬，請將班表改為休" style="font-weight:700">${e.attendDays}天⚠</span>`
+      : `${e.attendDays||0}天`;
+    return `<tr>
     <td style="font-weight:600">${e.name}</td>
     <td style="color:var(--text2)">${e.dept}</td>
     <td><span class="badge badge-role">${e.role}</span></td>
     <td><span class="badge ${e.type==='PT'?'badge-pt':'badge-ft'}">${e.type}</span></td>
-    <td class="td-num">${fmtNum(e.normalHours)}h</td>
-    <td class="td-num ot-cell">${fmtNum(e.otHours||0)}h</td>
+    <td class="td-num">${fmtNum(totalH)}h</td>
+    <td class="td-num">${dayCell}</td>
     <td class="td-num ${e.unpaidHours>0?'deduct-cell':''}">${fmtNum(e.unpaidHours||0)}h</td>
     <td class="td-num">${fmt(e.adjustedBasePay||e.basePay)}</td>
     <td class="td-num">${fmt(e.mgmtAllowance||0)}</td>
-    <td class="td-num ot-cell">${fmt(e.normalOTPay||0)}</td>
+    <td class="td-num">${fmt(e.extraNormalPay||0)}</td>
+    <td class="td-num ot-cell">${fmt(e.ladderPay||0)}</td>
     <td class="td-num">${fmt(e.fixedOTPay||0)}</td>
     <td class="td-num">${fmt(e.mealAllowance||0)}</td>
     <td class="td-num">${fmt(e.annualLeaveBonus||0)}</td>
@@ -1946,7 +2036,7 @@ function renderReportTable() {
     <td class="td-num deduct-cell">${fmt(e.deductionsD||0)}</td>
     <td class="td-num net-pay-cell">${fmt(e.net)}</td>
     <td><button class="btn btn-sm btn-icon" onclick='showPayslip("${e.id}")' title="預覽薪資單"><i class="ti ti-eye"></i></button></td>
-  </tr>`).join('');
+  </tr>`;}).join('');
 
   renderPagination('rep-pagination', filtered.length, repPage, p => { repPage=p; renderReportTable(); });
 }
@@ -1962,19 +2052,21 @@ function renderPagination(containerId, total, page, onPage) {
 
 function exportCSV() {
   if (!salaryReport.length) { showToast('請先計算薪資', 'error'); return; }
-  const hdr = ['姓名','工號','案場','職稱','類型','工時','加班時','無薪假(h)',
-    '底薪','無薪假扣款','幹部津貼','加班費','固定加班費','停休加班費',
+  const hdr = ['姓名','工號','案場','職稱','類型','工時','出勤天數','無薪假(h)',
+    '底薪','無薪假扣款','幹部津貼','增加正常工時工資','國定假日加班費','出勤階梯獎金','固定加班費',
     '伙食津貼','特休獎金','全勤','三節','績效',
-    '應發(A+B)','扣款(C+D)','實發薪資'];
+    '應發(A+B)','扣款(C+D)','實發薪資','超排定天數警告'];
   const rows = salaryReport.map(e => [
     e.name,e.id,e.dept,e.role,e.type,
-    fmtNum(e.normalHours),fmtNum(e.otHours||0),fmtNum(e.unpaidHours||0),
+    fmtNum((e.normalHours||0)+(e.otDayOffHours||0)),e.attendDays||0,fmtNum(e.unpaidHours||0),
     Math.round(e.basePay),Math.round(e.unpaidDeduction||0),
-    Math.round(e.mgmtAllowance||0),Math.round(e.normalOTPay||0),
-    Math.round(e.fixedOTPay||0),Math.round(e.holidayOTPay||0),
+    Math.round(e.mgmtAllowance||0),Math.round(e.extraNormalPay||0),
+    Math.round(e.holidayFixedPay||0),Math.round(e.ladderPay||0),
+    Math.round(e.fixedOTPay||0),
     Math.round(e.mealAllowance||0),Math.round(e.annualLeaveBonus||0),
     Math.round(e.fullAttBonus||0),Math.round(e.festival||0),Math.round(e.performance||0),
-    Math.round(e.gross),Math.round(e.deductionsD||0),Math.round(e.net)
+    Math.round(e.gross),Math.round(e.deductionsD||0),Math.round(e.net),
+    e.overScheduleWarning ? `超出${e.overDays}天未計酬` : ''
   ]);
   const csv = '\uFEFF' + [hdr, ...rows].map(r=>r.join(',')).join('\n');
   const a = document.createElement('a');
@@ -2081,8 +2173,8 @@ function generatePayslipHTML(e) {
 
   // 加班說明
   const otRows = [];
-  if (e.normalOTPay > 0)  otRows.push(['正常延長工資', `${fmtNum(e.otHours||0)}h`, Math.round(e.normalOTPay)]);
-  if (e.holidayOTPay > 0) otRows.push(['停休加班費', `${fmtNum(e.otDayOffHours||0)}h`, Math.round(e.holidayOTPay)]);
+  if (e.ladderPay > 0) otRows.push(['出勤階梯獎金', `${e.attendDays}天(超${e.overDays}天)`, Math.round(e.ladderPay)]);
+  if (e.overScheduleWarning) otRows.push([`⚠超出排定${e.scheduledDays}天`, `${e.attendDays}天`, 0]);
 
   // 請假說明
   const leaveRows = leaveRecords.filter(r => r.empId === e.id || r.name === e.name)
@@ -2093,14 +2185,15 @@ function generatePayslipHTML(e) {
     ['本薪', Math.round(e.basePay)],
     e.unpaidDeduction > 0 ? ['無薪假扣款', -Math.round(e.unpaidDeduction)] : null,
     e.mgmtAllowance > 0 ? ['幹部津貼', Math.round(e.mgmtAllowance)] : null,
-    e.normalOTPay > 0 ? ['正常延長工資', Math.round(e.normalOTPay)] : null,
-    e.holidayOTPay > 0 ? ['停休加班費', Math.round(e.holidayOTPay)] : null,
+    e.extraNormalPay > 0 ? ['增加正常工時工資', Math.round(e.extraNormalPay)] : null,
   ].filter(Boolean);
 
   // 建構 B 欄
   const rowsB = [
     e.mealAllowance > 0 ? ['伙食津貼', Math.round(e.mealAllowance)] : null,
     e.fixedOTPay > 0 ? ['固定加班費', Math.round(e.fixedOTPay)] : null,
+    e.holidayFixedPay > 0 ? ['國定假日加班費', Math.round(e.holidayFixedPay)] : null,
+    e.ladderPay > 0 ? [`出勤加班費暨規律獎金(${e.attendDays}天)`, Math.round(e.ladderPay)] : null,
     e.annualLeaveBonus > 0 ? [`未休假獎金(${e.annualLeaveDays||0}天)`, Math.round(e.annualLeaveBonus)] : null,
     e.fullAttBonus > 0 ? ['全勤獎金', Math.round(e.fullAttBonus)] : null,
     e.festival > 0 ? ['三節禮金', Math.round(e.festival)] : null,

@@ -580,6 +580,19 @@ tr:last-child td{border-bottom:none}
               </table>
             </div>
           </div>
+
+          <div class="settings-section">
+            <div class="section-title"><i class="ti ti-calendar-off"></i>幹部請假日薪（12H缺勤扣款，元/天）</div>
+            <div class="card">
+              <table class="role-table">
+                <thead><tr><th>職稱</th><th>缺勤1天(12H)扣款（元）</th></tr></thead>
+                <tbody id="role-leave-rate-table"></tbody>
+              </table>
+              <div style="font-size:.72rem;color:var(--text3);margin-top:8px">
+                填0表示該職稱未設定，沿用一般員工公式（(本薪+伙食)/240×時數）。目前僅副隊長1,600元已依2張實際薪資單驗證（缺1天扣1,600、缺2天扣3,200），其餘職稱請依實際薪資單補齊。
+              </div>
+            </div>
+          </div>
         </div>
       </div>
     </div>
@@ -714,6 +727,12 @@ let settings = {
   mgmtAllowances:{
     '隊長':8000,'副隊長':5000,'組長':3000,'副組長':2000,
     '案場經理':10130,'安管員':0,'保全員':0,'臨聘人員':0
+  },
+  /* 幹部請假日薪（12H缺勤扣款），0表示未設定、沿用一般員工公式。
+     依實際薪資單驗證：副隊長1,600（缺1天扣1,600、缺2天扣3,200） */
+  mgmtLeaveDayRate:{
+    '隊長':0,'副隊長':1600,'組長':0,'副組長':0,
+    '案場經理':0,'安管員':0,'保全員':0,'臨聘人員':0
   }
 };
 
@@ -1734,6 +1753,14 @@ function initSettingsTab() {
         oninput="settings.mgmtAllowances['${role}']=parseInt(this.value)||0" style="width:100px;padding:4px 8px;background:var(--glass);border:1px solid var(--border);border-radius:4px;color:var(--text);font-size:.75rem;outline:none"></td>
     </tr>
   `).join('');
+  // 幹部請假日薪表
+  document.getElementById('role-leave-rate-table').innerHTML = roles.map(role => `
+    <tr>
+      <td>${role}</td>
+      <td><input type="number" value="${settings.mgmtLeaveDayRate[role]||0}"
+        oninput="settings.mgmtLeaveDayRate['${role}']=parseInt(this.value)||0" style="width:100px;padding:4px 8px;background:var(--glass);border:1px solid var(--border);border-radius:4px;color:var(--text);font-size:.75rem;outline:none"></td>
+    </tr>
+  `).join('');
 }
 
 function saveSettings() {
@@ -1968,8 +1995,11 @@ function calculateSalary(emp) {
   // 勤務津貼：無固定公式，個人化人工輸入金額（應稅）
   const dutyAllowance = cfg.dutyAllowance || 0;
 
-  // 請假扣款時薪基準：一般員工＝(本薪+伙食)/240；幹部另把幹部津貼算入時薪基準
-  const hourlyRate = (profile.baseSalary + profile.mealAllowance + mgmtAllowance) / 240;
+  // 請假扣款時薪基準：幹部依角色查「幹部請假日薪表」（固定日薪÷12H），
+  // 未設定角色的幹部與一般員工沿用(本薪+伙食)/240。
+  // 依實際薪資單驗證（副隊長，2026/03缺1天扣1,600；2026/06缺2天扣3,200，剛好整數倍）
+  const mgmtLeaveDayRate = settings.mgmtLeaveDayRate[emp.role];
+  const hourlyRate = mgmtLeaveDayRate ? (mgmtLeaveDayRate / 12) : profileHourlyRate(profile);
   const unpaidDeduction = Math.round(unpaidHours * hourlyRate);
   // 本薪維持全額顯示於A欄，無薪假扣款改列應稅扣項(C)，比照公司實際薪資單格式
   const adjustedBasePay = profile.baseSalary;

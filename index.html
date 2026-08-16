@@ -536,29 +536,37 @@ tr:last-child td{border-bottom:none}
             <div class="card">
               <div class="grid-2">
                 <div class="form-group">
-                  <label class="form-label">勞保費（員工自付，元）</label>
-                  <input type="number" class="form-input" id="s-labor" value="1145" oninput="saveSettings()">
+                  <label class="form-label">勞保費率（員工自付合計）</label>
+                  <input type="number" step="0.0001" class="form-input" id="s-laborrate" value="0.025" oninput="saveInsuranceRates()">
                 </div>
                 <div class="form-group">
-                  <label class="form-label">健保費（員工自付，元）</label>
-                  <input type="number" class="form-input" id="s-health" value="748" oninput="saveSettings()">
+                  <label class="form-label">健保費率（員工自付，眷口0人）</label>
+                  <input type="number" step="0.0001" class="form-input" id="s-healthrate" value="0.01551" oninput="saveInsuranceRates()">
                 </div>
                 <div class="form-group">
-                  <label class="form-label">福利金（元）</label>
+                  <label class="form-label">勞退提繳率（公司負擔，供顯示）</label>
+                  <input type="number" step="0.0001" class="form-input" id="s-pensionrate" value="0.06" oninput="saveInsuranceRates()">
+                </div>
+                <div class="form-group">
+                  <label class="form-label">福利金（元/月，員工自付）</label>
                   <input type="number" class="form-input" id="s-welfare" value="246" oninput="saveSettings()">
                 </div>
-                <div class="form-group">
-                  <label class="form-label">勞退公司提繳（元，供顯示）</label>
-                  <input type="number" class="form-input" id="s-pension" value="2892" oninput="saveSettings()">
-                </div>
-                <div class="form-group">
-                  <label class="form-label">勞退投保薪資（元）</label>
-                  <input type="number" class="form-input" id="s-laborbase" value="48200" oninput="saveSettings()">
-                </div>
-                <div class="form-group">
-                  <label class="form-label">健保投保薪資（元）</label>
-                  <input type="number" class="form-input" id="s-healthbase" value="48200" oninput="saveSettings()">
-                </div>
+              </div>
+              <div style="font-size:.72rem;color:var(--text3);margin-top:8px">
+                勞保費＝勞保投保薪資×勞保費率；健保費＝健保投保薪資×健保費率；投保薪資由下方分級表依「月投保薪資基準」自動對應。
+              </div>
+            </div>
+          </div>
+
+          <div class="settings-section">
+            <div class="section-title"><i class="ti ti-table"></i>投保薪資分級表</div>
+            <div class="card">
+              <table class="role-table" id="insurance-bracket-table"></table>
+              <div style="display:flex;gap:8px;margin-top:10px">
+                <button class="btn btn-sm" onclick="addInsuranceBracket()"><i class="ti ti-plus"></i>新增級距</button>
+              </div>
+              <div style="font-size:.72rem;color:var(--text3);margin-top:8px">
+                「月投保薪資基準」達到門檻即套用該列的勞保／健保投保薪資。目前僅預填2筆已驗證級距（一般保全員43,900；有幹部津貼者45,800/48,200，依實際薪資單反推），其餘中間級距請依會計提供的官方分級表補齊。
               </div>
             </div>
           </div>
@@ -747,6 +755,27 @@ let siteProfiles = {
     scheduledDays:20, attendLadder:[],
   },
 };
+
+/* ===== 勞健保／勞退投保薪資分級表 =====
+   員工「月投保薪資基準」（本薪+幹部津貼+增加正常工時工資+伙食+固定加班費+國定假日加班費，
+   不含特休獎金/三節/績效等不固定項目）達到 threshold 即適用該級距。
+   費率依實際薪資單反推驗證：勞保2.5%、健保1.551%（眷口0人）、勞退提繳6%。
+   目前僅收錄兩筆已驗證級距，其餘中間級距請依會計提供的官方分級表補齊。 */
+let insuranceBrackets = [
+  { threshold:0,     laborBase:43900, healthBase:43900, note:'一般保全員（無幹部津貼）— 依案場文件投保級距' },
+  { threshold:45000, laborBase:45800, healthBase:48200, note:'副隊長等幹部（有幹部津貼）— 依2026/06實際薪資單驗證' },
+];
+let LABOR_INS_RATE = 0.025;
+let HEALTH_INS_RATE = 0.01551;
+let PENSION_RATE = 0.06;
+
+function selectInsuranceBracket(monthlySalary) {
+  let picked = insuranceBrackets[0];
+  for (const b of insuranceBrackets) {
+    if (monthlySalary >= b.threshold) picked = b;
+  }
+  return picked;
+}
 
 function getSiteProfile(dept) {
   const d = String(dept || '');
@@ -1652,8 +1681,49 @@ function updateSiteLadder(key, idx, val) {
   while (ladder.length && ladder[ladder.length-1] === 0) ladder.pop();
 }
 
+function saveInsuranceRates() {
+  LABOR_INS_RATE = parseFloat(document.getElementById('s-laborrate').value)||0.025;
+  HEALTH_INS_RATE = parseFloat(document.getElementById('s-healthrate').value)||0.01551;
+  PENSION_RATE = parseFloat(document.getElementById('s-pensionrate').value)||0.06;
+}
+
+function renderInsuranceBracketTable() {
+  const el = document.getElementById('insurance-bracket-table');
+  if (!el) return;
+  insuranceBrackets.sort((a,b) => a.threshold - b.threshold);
+  el.innerHTML = '<thead><tr><th>門檻起始薪資（元）</th><th>勞保投保薪資</th><th>健保／勞退投保薪資</th><th>備註</th><th></th></tr></thead><tbody>' +
+    insuranceBrackets.map((b, i) => `
+      <tr>
+        <td><input type="number" value="${b.threshold}" style="width:90px;padding:4px 8px;background:var(--glass);border:1px solid var(--border);border-radius:4px;color:var(--text);font-size:.75rem"
+          oninput="updateInsuranceBracket(${i},'threshold',this.value)"></td>
+        <td><input type="number" value="${b.laborBase}" style="width:90px;padding:4px 8px;background:var(--glass);border:1px solid var(--border);border-radius:4px;color:var(--text);font-size:.75rem"
+          oninput="updateInsuranceBracket(${i},'laborBase',this.value)"></td>
+        <td><input type="number" value="${b.healthBase}" style="width:90px;padding:4px 8px;background:var(--glass);border:1px solid var(--border);border-radius:4px;color:var(--text);font-size:.75rem"
+          oninput="updateInsuranceBracket(${i},'healthBase',this.value)"></td>
+        <td><input type="text" value="${b.note||''}" style="width:100%;min-width:160px;padding:4px 8px;background:var(--glass);border:1px solid var(--border);border-radius:4px;color:var(--text);font-size:.75rem"
+          oninput="updateInsuranceBracket(${i},'note',this.value)"></td>
+        <td><button class="btn btn-sm btn-icon" onclick="removeInsuranceBracket(${i})" title="刪除"><i class="ti ti-trash"></i></button></td>
+      </tr>`).join('') + '</tbody>';
+}
+
+function updateInsuranceBracket(i, field, val) {
+  if (field === 'note') insuranceBrackets[i][field] = val;
+  else insuranceBrackets[i][field] = parseFloat(val) || 0;
+}
+
+function addInsuranceBracket() {
+  insuranceBrackets.push({threshold:0, laborBase:0, healthBase:0, note:''});
+  renderInsuranceBracketTable();
+}
+
+function removeInsuranceBracket(i) {
+  insuranceBrackets.splice(i,1);
+  renderInsuranceBracketTable();
+}
+
 function initSettingsTab() {
   renderSiteProfileCards();
+  renderInsuranceBracketTable();
   // 幹部津貼表
   const roles = ['隊長','副隊長','組長','副組長','案場經理','安管員','保全員'];
   document.getElementById('role-allowance-table').innerHTML = roles.map(role => `
@@ -1668,12 +1738,7 @@ function initSettingsTab() {
 function saveSettings() {
   settings.annualLeaveBonusPerDay = parseFloat(document.getElementById('s-annualbonus').value)||1230;
   settings.fullAttendanceBonus = parseFloat(document.getElementById('s-fullatt').value)||0;
-  settings.laborIns = parseFloat(document.getElementById('s-labor').value)||1145;
-  settings.healthIns = parseFloat(document.getElementById('s-health').value)||748;
   settings.welfareFund = parseFloat(document.getElementById('s-welfare').value)||246;
-  settings.laborPension = parseFloat(document.getElementById('s-pension').value)||2892;
-  settings.laborInsBase = parseFloat(document.getElementById('s-laborbase').value)||45800;
-  settings.healthInsBase = parseFloat(document.getElementById('s-healthbase').value)||48200;
   settings.ptHourly = parseFloat(document.getElementById('s-pthourly').value)||183;
   settings.ptAnnualBonusPerDay = parseFloat(document.getElementById('s-ptannual').value)||1230;
 }
@@ -1886,7 +1951,8 @@ function calculateSalary(emp) {
   const profile = getSiteProfile(emp.dept);
   const hourlyRate = profileHourlyRate(profile); // (本薪+伙食)/240 = 122.916
   const unpaidDeduction = Math.round(unpaidHours * hourlyRate);
-  const adjustedBasePay = profile.baseSalary - unpaidDeduction;
+  // 本薪維持全額顯示於A欄，無薪假扣款改列應稅扣項(C)，比照公司實際薪資單格式
+  const adjustedBasePay = profile.baseSalary;
 
   // 每日1H延長工時已含在固定加班費內，排滿班不產生變動加班費。
   // 超出排定天數的出勤 → 出勤階梯獎金（累加制）；無階梯的案場不計酬僅警告。
@@ -1933,10 +1999,21 @@ function calculateSalary(emp) {
   const taxableA = adjustedBasePay + mgmtAllowance + extraNormalPay;
   // 免稅加項 B
   const nonTaxableB = mealAllowance + fixedOTPay + holidayFixedPay + ladderPay + annualLeaveBonus + fullAttBonus + festival + performance + customBonus;
-  // 應稅扣項 C = 0（所得稅另計）
-  const deductionsC = 0;
+  // 應稅扣項 C：請假扣(發)款（無薪假扣款，比照實際薪資單獨立列示）
+  const deductionsC = unpaidDeduction;
+
+  // 勞健保／勞退：依「月投保薪資分級表」自動對應級距，比照實際薪資單驗證公式
+  //（勞保費率2.5%、健保費率1.551%、勞退提繳率6%，皆為員工自付/依法提繳部分）
+  const insuranceSalaryBase = profile.baseSalary + mgmtAllowance + extraNormalPay + mealAllowance + fixedOTPay + holidayFixedPay;
+  const bracket = selectInsuranceBracket(insuranceSalaryBase);
+  const laborInsBase = bracket.laborBase;
+  const healthInsBase = bracket.healthBase;
+  const laborIns = Math.round(laborInsBase * LABOR_INS_RATE);
+  const healthIns = Math.round(healthInsBase * HEALTH_INS_RATE);
+  const laborPension = Math.round(healthInsBase * PENSION_RATE);
+
   // 免稅扣項 D
-  const deductionsD = settings.laborIns + settings.healthIns + settings.welfareFund;
+  const deductionsD = laborIns + healthIns + settings.welfareFund;
 
   const gross = taxableA + nonTaxableB;
   const net = gross - deductionsC - deductionsD;
@@ -1951,7 +2028,8 @@ function calculateSalary(emp) {
     scheduledDays:profile.scheduledDays,
     taxableA, nonTaxableB, deductionsC, deductionsD,
     gross, net, annualLeaveDays:annualDays,
-    laborIns:settings.laborIns, healthIns:settings.healthIns,
+    insuranceSalaryBase, laborInsBase, healthInsBase, laborPension,
+    laborIns, healthIns,
     welfareFund:settings.welfareFund
   };
 }
@@ -2008,7 +2086,7 @@ function renderReportTable() {
     '<th class="td-num">底薪</th><th class="td-num">幹部津貼</th><th class="td-num">增加正常工時</th>' +
     '<th class="td-num">階梯獎金</th><th class="td-num">固定OT</th><th class="td-num">伙食</th>' +
     '<th class="td-num">特休獎金</th>' +
-    '<th class="td-num">應發(A+B)</th><th class="td-num">扣款(D)</th>' +
+    '<th class="td-num">應發(A+B)</th><th class="td-num">請假扣款(C)</th><th class="td-num">勞健保等(D)</th>' +
     '<th class="td-num" style="color:var(--green)">實發薪資</th><th>薪資單</th>';
 
   const slice = filtered.slice(repPage*PER_PAGE, (repPage+1)*PER_PAGE);
@@ -2033,6 +2111,7 @@ function renderReportTable() {
     <td class="td-num">${fmt(e.mealAllowance||0)}</td>
     <td class="td-num">${fmt(e.annualLeaveBonus||0)}</td>
     <td class="td-num">${fmt(e.gross)}</td>
+    <td class="td-num ${e.deductionsC>0?'deduct-cell':''}">${fmt(e.deductionsC||0)}</td>
     <td class="td-num deduct-cell">${fmt(e.deductionsD||0)}</td>
     <td class="td-num net-pay-cell">${fmt(e.net)}</td>
     <td><button class="btn btn-sm btn-icon" onclick='showPayslip("${e.id}")' title="預覽薪資單"><i class="ti ti-eye"></i></button></td>
@@ -2053,19 +2132,21 @@ function renderPagination(containerId, total, page, onPage) {
 function exportCSV() {
   if (!salaryReport.length) { showToast('請先計算薪資', 'error'); return; }
   const hdr = ['姓名','工號','案場','職稱','類型','工時','出勤天數','無薪假(h)',
-    '底薪','無薪假扣款','幹部津貼','增加正常工時工資','國定假日加班費','出勤階梯獎金','固定加班費',
+    '底薪','幹部津貼','增加正常工時工資','國定假日加班費','出勤階梯獎金','固定加班費',
     '伙食津貼','特休獎金','全勤','三節','績效',
-    '應發(A+B)','扣款(C+D)','實發薪資','超排定天數警告'];
+    '應發(A+B)','請假扣款(C)','勞保費','健保費','福利金','扣款(C+D)','實發薪資','超排定天數警告'];
   const rows = salaryReport.map(e => [
     e.name,e.id,e.dept,e.role,e.type,
     fmtNum((e.normalHours||0)+(e.otDayOffHours||0)),e.attendDays||0,fmtNum(e.unpaidHours||0),
-    Math.round(e.basePay),Math.round(e.unpaidDeduction||0),
+    Math.round(e.basePay),
     Math.round(e.mgmtAllowance||0),Math.round(e.extraNormalPay||0),
     Math.round(e.holidayFixedPay||0),Math.round(e.ladderPay||0),
     Math.round(e.fixedOTPay||0),
     Math.round(e.mealAllowance||0),Math.round(e.annualLeaveBonus||0),
     Math.round(e.fullAttBonus||0),Math.round(e.festival||0),Math.round(e.performance||0),
-    Math.round(e.gross),Math.round(e.deductionsD||0),Math.round(e.net),
+    Math.round(e.gross),Math.round(e.deductionsC||0),
+    Math.round(e.laborIns||0),Math.round(e.healthIns||0),Math.round(e.welfareFund||0),
+    Math.round((e.deductionsC||0)+(e.deductionsD||0)),Math.round(e.net),
     e.overScheduleWarning ? `超出${e.overDays}天未計酬` : ''
   ]);
   const csv = '\uFEFF' + [hdr, ...rows].map(r=>r.join(',')).join('\n');
@@ -2183,9 +2264,13 @@ function generatePayslipHTML(e) {
   // 建構 A 欄
   const rowsA = [
     ['本薪', Math.round(e.basePay)],
-    e.unpaidDeduction > 0 ? ['無薪假扣款', -Math.round(e.unpaidDeduction)] : null,
     e.mgmtAllowance > 0 ? ['幹部津貼', Math.round(e.mgmtAllowance)] : null,
     e.extraNormalPay > 0 ? ['增加正常工時工資', Math.round(e.extraNormalPay)] : null,
+  ].filter(Boolean);
+
+  // 建構 C 欄（應稅扣項：請假扣(發)款，比照公司實際薪資單獨立列示）
+  const rowsC = [
+    e.unpaidDeduction > 0 ? ['請假扣(發)款', Math.round(e.unpaidDeduction)] : null,
   ].filter(Boolean);
 
   // 建構 B 欄
@@ -2209,14 +2294,16 @@ function generatePayslipHTML(e) {
     e.welfareFund > 0 ? ['福利金', Math.round(e.welfareFund)] : null,
   ].filter(Boolean);
 
-  const maxRows = Math.max(rowsA.length, rowsB.length, 1, rowsD.length);
+  const maxRows = Math.max(rowsA.length, rowsB.length, rowsC.length, 1, rowsD.length);
   while (rowsA.length < maxRows) rowsA.push(null);
   while (rowsB.length < maxRows) rowsB.push(null);
+  while (rowsC.length < maxRows) rowsC.push(null);
   while (rowsD.length < maxRows) rowsD.push(null);
 
   const mainRows = Array.from({length:maxRows}, (_,i) => {
     const a = rowsA[i];
     const b = rowsB[i];
+    const c = rowsC[i];
     const d = rowsD[i];
     const aVal = a ? (a[1] < 0 ? '-' + Math.abs(a[1]).toLocaleString() : a[1].toLocaleString()) : '';
     const aColor = a && a[1] < 0 ? 'color:#c62828;font-weight:700' : 'color:#111;font-weight:600';
@@ -2225,8 +2312,8 @@ function generatePayslipHTML(e) {
       <td style="text-align:right;${aColor};border:1px solid #ccc;padding:4px 8px">${aVal}</td>
       <td style="background:#f0f8f0;font-weight:600;color:#333;border:1px solid #ccc;padding:4px 8px">${b?b[0]:''}</td>
       <td style="text-align:right;color:#111;font-weight:600;border:1px solid #ccc;padding:4px 8px">${b?b[1].toLocaleString():''}</td>
-      <td style="background:#fff8f5;font-weight:600;color:#333;border:1px solid #ccc;padding:4px 8px"></td>
-      <td style="text-align:right;color:#111;border:1px solid #ccc;padding:4px 8px"></td>
+      <td style="background:#fff8f5;font-weight:600;color:#333;border:1px solid #ccc;padding:4px 8px">${c?c[0]:''}</td>
+      <td style="text-align:right;color:#c62828;font-weight:600;border:1px solid #ccc;padding:4px 8px">${c?c[1].toLocaleString():''}</td>
       <td style="background:#fff0f0;font-weight:600;color:#333;border:1px solid #ccc;padding:4px 8px">${d?d[0]:''}</td>
       <td style="text-align:right;color:#c62828;font-weight:600;border:1px solid #ccc;padding:4px 8px">${d?d[1].toLocaleString():''}</td>
     </tr>`;
@@ -2317,7 +2404,7 @@ function generatePayslipHTML(e) {
   <table class="ps-footer-table">
     <tr>
       <td class="pf-label">勞退公司提繳：</td>
-      <td>${settings.laborPension.toLocaleString()} 元</td>
+      <td>${(e.laborPension||0).toLocaleString()} 元</td>
       <td class="pf-label">應發金額(A+B)：</td>
       <td style="font-weight:700">${Math.round(gross).toLocaleString()} 元</td>
       <td class="pf-label">扣款金額(C+D)：</td>
@@ -2327,11 +2414,11 @@ function generatePayslipHTML(e) {
     </tr>
     <tr>
       <td class="pf-label">勞退投保薪資：</td>
-      <td>${settings.laborInsBase.toLocaleString()} 元</td>
+      <td>${(e.healthInsBase||0).toLocaleString()} 元</td>
       <td class="pf-label">勞保投保薪資：</td>
-      <td>${settings.laborInsBase.toLocaleString()} 元</td>
+      <td>${(e.laborInsBase||0).toLocaleString()} 元</td>
       <td class="pf-label">健保投保薪資：</td>
-      <td>${settings.healthInsBase.toLocaleString()} 元</td>
+      <td>${(e.healthInsBase||0).toLocaleString()} 元</td>
       <td class="pf-label">健保眷口數：</td>
       <td>0 人</td>
     </tr>

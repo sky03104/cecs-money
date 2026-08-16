@@ -2125,7 +2125,8 @@ function renderReportTable() {
     '<th class="td-num">底薪</th><th class="td-num">幹部津貼</th><th class="td-num">增加正常工時</th>' +
     '<th class="td-num">階梯獎金/超時折現</th><th class="td-num">固定OT</th><th class="td-num">伙食</th>' +
     '<th class="td-num">特休獎金</th>' +
-    '<th class="td-num">應發(A+B)</th><th class="td-num">請假扣款(C)</th><th class="td-num">勞健保等(D)</th>' +
+    '<th class="td-num">應發(A+B)</th><th class="td-num">請假扣款(C)</th>' +
+    '<th class="td-num">勞保費</th><th class="td-num">健保費</th><th class="td-num">福利金</th>' +
     '<th class="td-num" style="color:var(--green)">實發薪資</th><th>薪資單</th>';
 
   const slice = filtered.slice(repPage*PER_PAGE, (repPage+1)*PER_PAGE);
@@ -2153,7 +2154,9 @@ function renderReportTable() {
     <td class="td-num">${fmt(e.annualLeaveBonus||0)}</td>
     <td class="td-num">${fmt(e.gross)}</td>
     <td class="td-num ${e.deductionsC>0?'deduct-cell':''}">${fmt(e.deductionsC||0)}</td>
-    <td class="td-num deduct-cell">${fmt(e.deductionsD||0)}</td>
+    <td class="td-num deduct-cell">${fmt(e.laborIns||0)}</td>
+    <td class="td-num deduct-cell">${fmt(e.healthIns||0)}</td>
+    <td class="td-num deduct-cell">${fmt(e.welfareFund||0)}</td>
     <td class="td-num net-pay-cell">${fmt(e.net)}</td>
     <td><button class="btn btn-sm btn-icon" onclick='showPayslip("${e.id}")' title="預覽薪資單"><i class="ti ti-eye"></i></button></td>
   </tr>`;}).join('');

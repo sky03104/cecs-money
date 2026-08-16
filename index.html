@@ -548,8 +548,8 @@ tr:last-child td{border-bottom:none}
                   <input type="number" step="0.0001" class="form-input" id="s-pensionrate" value="0.06" oninput="saveInsuranceRates()">
                 </div>
                 <div class="form-group">
-                  <label class="form-label">福利金（元/月，員工自付）</label>
-                  <input type="number" class="form-input" id="s-welfare" value="246" oninput="saveSettings()">
+                  <label class="form-label">福利金費率（員工自付，×應發A+B）</label>
+                  <input type="number" step="0.0001" class="form-input" id="s-welfarerate" value="0.005" oninput="saveInsuranceRates()">
                 </div>
               </div>
               <div style="font-size:.72rem;color:var(--text3);margin-top:8px">
@@ -710,8 +710,6 @@ let customBonus2 = {name:'自訂獎金2', amount:0};
 /* ===== 預設薪資設定（全域項）===== */
 let settings = {
   annualLeaveBonusPerDay:1230, fullAttendanceBonus:0,
-  laborIns:1145, healthIns:748, welfareFund:246,
-  laborPension:2892, laborInsBase:45800, healthInsBase:48200,
   ptHourly:183, ptAnnualBonusPerDay:1230,
   mgmtAllowances:{
     '隊長':8000,'副隊長':5000,'組長':3000,'副組長':2000,
@@ -768,6 +766,7 @@ let insuranceBrackets = [
 let LABOR_INS_RATE = 0.025;
 let HEALTH_INS_RATE = 0.01551;
 let PENSION_RATE = 0.06;
+let WELFARE_FUND_RATE = 0.005; // 職工福利金＝應發金額(A+B)×0.5%
 
 function selectInsuranceBracket(monthlySalary) {
   let picked = insuranceBrackets[0];
@@ -1421,6 +1420,7 @@ function defaultBonusConfig(empId) {
     festival: false,
     performance: false,
     annualLeaveDays: annualLeaveMap[empId] || 0,
+    dutyAllowance: 0,
     customBonus1Enabled: false,
     customBonus2Enabled: false,
   };
@@ -1685,6 +1685,7 @@ function saveInsuranceRates() {
   LABOR_INS_RATE = parseFloat(document.getElementById('s-laborrate').value)||0.025;
   HEALTH_INS_RATE = parseFloat(document.getElementById('s-healthrate').value)||0.01551;
   PENSION_RATE = parseFloat(document.getElementById('s-pensionrate').value)||0.06;
+  WELFARE_FUND_RATE = parseFloat(document.getElementById('s-welfarerate').value)||0.005;
 }
 
 function renderInsuranceBracketTable() {
@@ -1738,7 +1739,6 @@ function initSettingsTab() {
 function saveSettings() {
   settings.annualLeaveBonusPerDay = parseFloat(document.getElementById('s-annualbonus').value)||1230;
   settings.fullAttendanceBonus = parseFloat(document.getElementById('s-fullatt').value)||0;
-  settings.welfareFund = parseFloat(document.getElementById('s-welfare').value)||246;
   settings.ptHourly = parseFloat(document.getElementById('s-pthourly').value)||183;
   settings.ptAnnualBonusPerDay = parseFloat(document.getElementById('s-ptannual').value)||1230;
 }
@@ -1835,6 +1835,7 @@ function renderBonusTable() {
     '<th class="emp-name-cell">姓名</th><th>案場</th><th>職稱</th><th>類型</th>' +
     BONUS_TYPES.map(bt => `<th class="td-center">${bt.name}</th>`).join('') +
     '<th class="td-center">特休天數</th>' +
+    '<th class="td-center">勤務津貼(應稅)</th>' +
     `<th class="td-center" id="th-custom1" style="color:var(--gold2)">${customBonus1.name||'自訂獎金1'}</th>` +
     `<th class="td-center" id="th-custom2" style="color:var(--gold2)">${customBonus2.name||'自訂獎金2'}</th>`;
 
@@ -1864,6 +1865,10 @@ function renderBonusTable() {
         <span style="font-size:.68rem;color:var(--text3)">天</span>
       </td>
       <td class="td-center">
+        <input type="number" class="leave-days-input" min="0" value="${cfg.dutyAllowance||0}"
+          oninput="setDutyAllowance('${emp.id}',this.value)">
+      </td>
+      <td class="td-center">
         <input type="checkbox" ${c1?'checked':''}
           onchange="if(!empBonusConfig['${emp.id}'])empBonusConfig['${emp.id}']=defaultBonusConfig('${emp.id}');empBonusConfig['${emp.id}'].customBonus1Enabled=this.checked"
           style="width:16px;height:16px;cursor:pointer;accent-color:var(--gold)">
@@ -1875,6 +1880,12 @@ function renderBonusTable() {
       </td>
     </tr>`;
   }).join('');
+}
+
+function setDutyAllowance(empId, val) {
+  const amount = parseFloat(val) || 0;
+  if (!empBonusConfig[empId]) empBonusConfig[empId] = defaultBonusConfig(empId);
+  empBonusConfig[empId].dutyAllowance = amount;
 }
 
 function setAnnualLeaveDays(empId, val) {
@@ -1949,7 +1960,16 @@ function calculateSalary(emp) {
 
   // 正職計算：依案場薪資結構
   const profile = getSiteProfile(emp.dept);
-  const hourlyRate = profileHourlyRate(profile); // (本薪+伙食)/240 = 122.916
+
+  // 幹部津貼
+  const mgmtAllowance = cfg.mgmtAllowance !== false ?
+    (settings.mgmtAllowances[emp.role] || 0) : 0;
+
+  // 勤務津貼：無固定公式，個人化人工輸入金額（應稅）
+  const dutyAllowance = cfg.dutyAllowance || 0;
+
+  // 請假扣款時薪基準：一般員工＝(本薪+伙食)/240；幹部另把幹部津貼算入時薪基準
+  const hourlyRate = (profile.baseSalary + profile.mealAllowance + mgmtAllowance) / 240;
   const unpaidDeduction = Math.round(unpaidHours * hourlyRate);
   // 本薪維持全額顯示於A欄，無薪假扣款改列應稅扣項(C)，比照公司實際薪資單格式
   const adjustedBasePay = profile.baseSalary;
@@ -1963,10 +1983,6 @@ function calculateSalary(emp) {
   // 增加正常工時工資、國定假日加班費（每月固定）
   const extraNormalPay = profile.extraNormalPay;
   const holidayFixedPay = profile.holidayFixedPay;
-
-  // 幹部津貼
-  const mgmtAllowance = cfg.mgmtAllowance !== false ?
-    (settings.mgmtAllowances[emp.role] || 0) : 0;
 
   // 固定加班費（依案場）
   const fixedOTPay = cfg.fixedOT !== false ? profile.fixedOT : 0;
@@ -1996,7 +2012,7 @@ function calculateSalary(emp) {
   ].filter(Boolean).join('+') || '自訂獎金';
 
   // 應稅加項 A
-  const taxableA = adjustedBasePay + mgmtAllowance + extraNormalPay;
+  const taxableA = adjustedBasePay + mgmtAllowance + extraNormalPay + dutyAllowance;
   // 免稅加項 B
   const nonTaxableB = mealAllowance + fixedOTPay + holidayFixedPay + ladderPay + annualLeaveBonus + fullAttBonus + festival + performance + customBonus;
   // 應稅扣項 C：請假扣(發)款（無薪假扣款，比照實際薪資單獨立列示）
@@ -2012,16 +2028,19 @@ function calculateSalary(emp) {
   const healthIns = Math.round(healthInsBase * HEALTH_INS_RATE);
   const laborPension = Math.round(healthInsBase * PENSION_RATE);
 
-  // 免稅扣項 D
-  const deductionsD = laborIns + healthIns + settings.welfareFund;
-
   const gross = taxableA + nonTaxableB;
+
+  // 福利金＝應發金額(A+B)×0.5%，依實際薪資單反推驗證（45,152×0.5%=226；49,230×0.5%=246）
+  const welfareFund = Math.round(gross * WELFARE_FUND_RATE);
+  // 免稅扣項 D
+  const deductionsD = laborIns + healthIns + welfareFund;
+
   const net = gross - deductionsC - deductionsD;
 
   return {
     ...emp, normalHours, otDayOffHours, attendDays, unpaidHours,
     basePay:profile.baseSalary, unpaidDeduction,
-    adjustedBasePay, mgmtAllowance, extraNormalPay, holidayFixedPay,
+    adjustedBasePay, mgmtAllowance, dutyAllowance, extraNormalPay, holidayFixedPay,
     ladderPay, overDays, overScheduleWarning,
     fixedOTPay, mealAllowance, annualLeaveBonus, fullAttBonus,
     festival, performance, customBonus, custom1Pay, custom2Pay,
@@ -2029,8 +2048,7 @@ function calculateSalary(emp) {
     taxableA, nonTaxableB, deductionsC, deductionsD,
     gross, net, annualLeaveDays:annualDays,
     insuranceSalaryBase, laborInsBase, healthInsBase, laborPension,
-    laborIns, healthIns,
-    welfareFund:settings.welfareFund
+    laborIns, healthIns, welfareFund
   };
 }
 
@@ -2132,14 +2150,14 @@ function renderPagination(containerId, total, page, onPage) {
 function exportCSV() {
   if (!salaryReport.length) { showToast('請先計算薪資', 'error'); return; }
   const hdr = ['姓名','工號','案場','職稱','類型','工時','出勤天數','無薪假(h)',
-    '底薪','幹部津貼','增加正常工時工資','國定假日加班費','出勤階梯獎金','固定加班費',
+    '底薪','幹部津貼','勤務津貼','增加正常工時工資','國定假日加班費','出勤階梯獎金','固定加班費',
     '伙食津貼','特休獎金','全勤','三節','績效',
     '應發(A+B)','請假扣款(C)','勞保費','健保費','福利金','扣款(C+D)','實發薪資','超排定天數警告'];
   const rows = salaryReport.map(e => [
     e.name,e.id,e.dept,e.role,e.type,
     fmtNum((e.normalHours||0)+(e.otDayOffHours||0)),e.attendDays||0,fmtNum(e.unpaidHours||0),
     Math.round(e.basePay),
-    Math.round(e.mgmtAllowance||0),Math.round(e.extraNormalPay||0),
+    Math.round(e.mgmtAllowance||0),Math.round(e.dutyAllowance||0),Math.round(e.extraNormalPay||0),
     Math.round(e.holidayFixedPay||0),Math.round(e.ladderPay||0),
     Math.round(e.fixedOTPay||0),
     Math.round(e.mealAllowance||0),Math.round(e.annualLeaveBonus||0),
@@ -2265,6 +2283,7 @@ function generatePayslipHTML(e) {
   const rowsA = [
     ['本薪', Math.round(e.basePay)],
     e.mgmtAllowance > 0 ? ['幹部津貼', Math.round(e.mgmtAllowance)] : null,
+    e.dutyAllowance > 0 ? ['勤務津貼', Math.round(e.dutyAllowance)] : null,
     e.extraNormalPay > 0 ? ['增加正常工時工資', Math.round(e.extraNormalPay)] : null,
   ].filter(Boolean);
 
